@@ -21,18 +21,17 @@ credential helper for the repositories in your list — dev_sync runs your `git`
 
 ## Install
 
-The repository is private for now, so you need an ssh key with access to it. This installs dev_sync, and running it
-again updates it:
+Until the repository is public, run the command `install.sh` runs yourself, over ssh (you need an ssh key with access
+to the repository):
 
 ```sh
-sh -c 'd=$(mktemp -d) && git clone -q --depth 1 git@github.com:ferrisoft/dev_sync.git "$d" && sh "$d/install.sh"; rm -rf "$d"'
+cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git
 ```
 
-It clones the repository into a temporary folder and runs `install.sh` from there, which builds dev_sync (about a
-minute), installs it into `~/.cargo/bin` and tells you if that folder isn't on your `PATH` yet; then the folder is
-removed. To remove dev_sync: `cargo uninstall dev_sync`.
+It builds dev_sync (about a minute) and installs it into `~/.cargo/bin`; make sure that folder is on your `PATH`. Add
+`--force` to update. To remove dev_sync: `cargo uninstall dev_sync`.
 
-Once the repository is public, this does the same without an ssh key:
+Once the repository is public, the script does it (and checks git, Rust and your `PATH` first):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ferrisoft/dev_sync/main/install.sh | sh

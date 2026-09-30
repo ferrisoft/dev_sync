@@ -65,8 +65,8 @@ machines.
 Typical use (the tool repo is `ferrisoft/dev_sync`; the workspace repo URL is an example):
 
 ```sh
-# Once per machine (again to update): install dev_sync into ~/.cargo/bin over ssh, while the repo is private
-sh -c 'd=$(mktemp -d) && git clone -q --depth 1 git@github.com:ferrisoft/dev_sync.git "$d" && sh "$d/install.sh"; rm -rf "$d"'
+# Once per machine (add --force to update): install dev_sync into ~/.cargo/bin over ssh, while the repo is private
+cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git
 # ... or, once the repo is public:
 curl -fsSL https://raw.githubusercontent.com/ferrisoft/dev_sync/main/install.sh | sh
 
@@ -1968,10 +1968,11 @@ Record every change to this design made during implementation, with the reason.
   no cargo on `PATH`.
 - **Installing over ssh while private.** `curl` gets a 404 from `raw.githubusercontent.com` for a private repository,
   and GitHub serves no single file over ssh (`git archive --remote` is refused: "Invalid command:
-  git-upload-archive"). So the README's command clones into a temporary folder over ssh, runs `install.sh` from it
-  and removes the folder, wrapped in `sh -c` so it works from any shell; running it again updates. Tested against the
-  real repository with the user's ssh key: it installed dev_sync and left nothing in the temporary folder. The
-  `curl … | sh` form stays in the README for when the repository is public.
+  git-upload-archive"). A one-liner that clones into a temporary folder and runs `install.sh` from it worked, but the
+  user found it too clumsy. So until the repository is public the README gives the command `install.sh` runs, over
+  ssh: `cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git` (`--force` to update). Tested
+  against the real repository with the user's ssh key in ssh-agent: 32 s, no `CARGO_NET_GIT_FETCH_WITH_CLI` needed.
+  The `curl … | sh` form stays in the README for when the repository is public.
 - **Published** (2026-09-30, at the user's request, which lifts §14's commit rule and §16's no-push rule for this):
   the worktree was left, the code committed on `main` in `~/dev/dev_sync`, and `main` pushed to the empty
   `git@github.com:ferrisoft/dev_sync.git`.
