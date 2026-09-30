@@ -118,7 +118,6 @@ fn dispatch(
         }
         cli::ReportingCommand::Push => commands::push(context, report),
         cli::ReportingCommand::Keep { path } => commands::keep(context, &path, report),
-        cli::ReportingCommand::Import { dir } => commands::import(context, &dir, report),
     }
 }
 

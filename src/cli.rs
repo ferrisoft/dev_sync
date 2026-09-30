@@ -76,9 +76,4 @@ pub(crate) enum ReportingCommand {
         /// The blocked repository (relative to the current directory)
         path: PathBuf,
     },
-    /// Add the repos found under DIR to the layout (clones nothing)
-    Import {
-        /// A tree of clones outside the workspace; it is only read
-        dir: PathBuf,
-    },
 }

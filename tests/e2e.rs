@@ -449,39 +449,6 @@ fn scenario_18_the_workspace_is_found_from_anywhere_inside_it() -> anyhow::Resul
 }
 
 #[test]
-fn scenario_19_import_records_another_tree_without_touching_it() -> anyhow::Result<()> {
-    let world = World::create()?;
-    let pair = pair(&world)?;
-    let old = pair.laptop.dir().join("old");
-    let first = world.remote("first")?;
-    let second = world.remote("second")?;
-    for (remote, relative) in [(&first, "ferrisoft/w"), (&second, "a")] {
-        std::fs::create_dir_all(old.join(relative).parent().ok_or_else(|| anyhow::anyhow!("no parent"))?)?;
-        pair.laptop.git(&old, &["clone", "--quiet", path_str(remote)?, relative])?;
-    }
-    let local = old.join("local");
-    std::fs::create_dir_all(&local)?;
-    pair.laptop.git(&local, &["init", "--quiet"])?;
-    let before = listing(&old)?;
-    let imported = pair.laptop.run(&["import", path_str(&old)?])?.ok()?;
-    assert!(imported.stdout.contains("local has no origin remote"), "{imported:#?}");
-    assert_eq!(pair.laptop.last_subject()?, format!("laptop: import 2 repos from {}", old.display()));
-    pair.laptop.run(&["pull"])?.ok()?;
-    assert_eq!(pair.laptop.origin(&pair.laptop.dev2().join("ferrisoft").join("w"))?, path_str(&first)?);
-    assert_eq!(pair.laptop.origin(&pair.laptop.dev2().join("a"))?, path_str(&second)?);
-    assert_eq!(listing(&old)?, before);
-    let commits = pair.laptop.commit_count()?;
-    for inside in [pair.laptop.dev2().join("ferrisoft"), pair.laptop.dir().to_path_buf()] {
-        let refused = pair.laptop.run(&["import", path_str(&inside)?])?.exits(1)?;
-        assert!(refused.stderr.contains("the workspace"), "{refused:#?}");
-    }
-    let missing = pair.laptop.run(&["import", path_str(&old.join("missing"))?])?.exits(1)?;
-    assert!(missing.stderr.contains("missing doesn't exist") && !missing.stderr.contains("os error"), "{missing:#?}");
-    assert_eq!(pair.laptop.commit_count()?, commits);
-    Ok(())
-}
-
-#[test]
 fn scenario_20_lost_state_is_harmless() -> anyhow::Result<()> {
     let world = World::create()?;
     let Sharing { pair, .. } = pair_sharing(&world, "a")?;
@@ -946,6 +913,8 @@ fn scenario_42_list_draws_the_dev_folder_down_to_its_repositories() -> anyhow::R
     let ferrisoft = dev2.join("ferrisoft");
     let elsewhere = laptop.run_in(laptop.dir(), &["list", path_str(&ferrisoft)?], &[])?.ok()?;
     assert_eq!(elsewhere.stdout, format!("{}/\n├── app\n└── notes/ (no repositories)\n", ferrisoft.display()));
+    let missing = laptop.run_in(laptop.dir(), &["list", path_str(&dev2.join("missing"))?], &[])?.exits(1)?;
+    assert!(missing.stderr.contains("missing doesn't exist") && !missing.stderr.contains("os error"), "{missing:#?}");
     Ok(())
 }
 

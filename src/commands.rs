@@ -1,6 +1,5 @@
 //! The subcommands (§9).
 
-mod import;
 mod init;
 mod keep;
 mod list;
@@ -10,7 +9,6 @@ mod push;
 mod session;
 mod status;
 
-pub(crate) use import::import;
 pub(crate) use init::init;
 pub(crate) use keep::keep;
 pub(crate) use list::list;

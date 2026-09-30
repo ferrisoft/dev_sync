@@ -26,11 +26,6 @@ pub(crate) fn init(context: &session::Context, dir: &Path, report: &mut report::
             repository.shell_word()
         ),
     );
-    report.info(
-        report::Scope::Workspace,
-        "clones already inside it are recorded by the first push; to take the layout from another tree, run \
-         `dev_sync import <dir>`"
-            .to_owned(),
-    );
+    report.info(report::Scope::Workspace, "clones already inside it are recorded by the first push".to_owned());
     Ok(())
 }
