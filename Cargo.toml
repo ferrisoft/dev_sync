@@ -1,0 +1,35 @@
+[package]
+name = "dev_sync"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "Keeps a dev folder of independent git clones identical across machines"
+publish = false
+
+[dependencies]
+anyhow = { version = "1.0.104", default-features = false, features = ["std"] }
+clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "usage"] }
+rustix = { version = "1.1.5", default-features = false, features = ["process", "std"] }
+serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
+toml = { version = "1.1.6", default-features = false, features = ["display", "parse", "serde", "std"] }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt", "std"] }
+trash = { version = "5.2.9", default-features = false, features = ["chrono"] }
+
+[dev-dependencies]
+tempfile = { version = "3.27.0", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+exit = "deny"
+use_self = "warn"
