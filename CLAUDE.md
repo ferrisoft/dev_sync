@@ -16,7 +16,7 @@ cargo build
 cargo test                                  # ~240 unit tests + 43 end-to-end scenarios (real git, ~7 s)
 cargo clippy --all-targets -- -D warnings   # must be clean; never #[allow] in production code
 cargo run -- --root <workspace> status      # during development
-sh install.sh                               # what users run: install this checkout as `dev_sync` (~30 s)
+cargo install --locked --path .             # install this checkout as `dev_sync` (release build, ~30 s)
 ```
 
 Stable Rust 1.95 (nixpkgs; no rustup, no nightly), edition 2024. No `rustfmt.toml`, so don't run rustfmt; keep lines
@@ -105,9 +105,8 @@ stopped, default 300) / `DEV_SYNC_RETRY_BASE_DELAY_MS` (tests; unparsable = star
 - NixOS's `cc` wrapper can't link when `CARGO_TARGET_DIR` contains `'` or non-ASCII, so never point a build at such
   a path (tests that build something must keep their target directory on a plain path).
 - User-facing text names commands as `dev_sync <command>`, never `./sync …` (the launcher is gone).
-- `install.sh` must stay POSIX sh and work both run as a file inside a clone (it builds that clone) and piped into
-  `sh` (it builds from `DEV_SYNC_REPOSITORY`, default the https URL — for when the repository is public). Test it
-  with `CARGO_INSTALL_ROOT` pointing at a scratch folder: without it, a test run installs into the real
+- Users install with `cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git` (README). When
+  trying an install, set `CARGO_INSTALL_ROOT` to a scratch folder: without it, the run installs into the real
   `~/.cargo/bin`.
 - The `trash` crate needs its `chrono` feature, or `.trashinfo` files lack `DeletionDate`. It copies across
   filesystems, so removals check the device of the Trash first and never let it copy.

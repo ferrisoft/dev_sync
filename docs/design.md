@@ -65,10 +65,9 @@ machines.
 Typical use (the tool repo is `ferrisoft/dev_sync`; the workspace repo URL is an example):
 
 ```sh
-# Once per machine (add --force to update): install dev_sync into ~/.cargo/bin over ssh, while the repo is private
+# Once per machine (add --force to update): install dev_sync into ~/.cargo/bin
+# (over ssh while the repo is private; https://github.com/ferrisoft/dev_sync once it is public)
 cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git
-# ... or, once the repo is public:
-curl -fsSL https://raw.githubusercontent.com/ferrisoft/dev_sync/main/install.sh | sh
 
 # Once, on the first machine: make the dev folder a workspace and publish it
 dev_sync init ~/dev
@@ -1959,20 +1958,17 @@ Record every change to this design made during implementation, with the reason.
 
 **Process**
 
-- **`install.sh`** (2026-09-30, at the user's request: the `cargo install` line was too complex). A POSIX sh script
-  at the repository root: it checks for git and cargo, runs `cargo install --locked --force` — from its own clone
-  when run as a file there, otherwise from `DEV_SYNC_REPOSITORY` (default the https URL) when piped into `sh` —
-  then says whether `~/.cargo/bin` is on `PATH` and what to do next. The repository stays private for now ("people
-  who have access will have access") and may become public later; the script needs no change in between.
-  `dev_sync --version` came with it. Tested run from a clone, piped with a local repository as the source, and with
-  no cargo on `PATH`.
-- **Installing over ssh while private.** `curl` gets a 404 from `raw.githubusercontent.com` for a private repository,
-  and GitHub serves no single file over ssh (`git archive --remote` is refused: "Invalid command:
-  git-upload-archive"). A one-liner that clones into a temporary folder and runs `install.sh` from it worked, but the
-  user found it too clumsy. So until the repository is public the README gives the command `install.sh` runs, over
-  ssh: `cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git` (`--force` to update). Tested
-  against the real repository with the user's ssh key in ssh-agent: 32 s, no `CARGO_NET_GIT_FETCH_WITH_CLI` needed.
-  The `curl … | sh` form stays in the README for when the repository is public.
+- **Installing** (2026-09-30). The README's install command is `cargo install --locked --git
+  ssh://git@github.com/ferrisoft/dev_sync.git` (`--force` to update): over ssh while the repository is private ("people
+  who have access will have access"), `https://github.com/ferrisoft/dev_sync` once it is public. Tested against the
+  real repository with the user's key in ssh-agent: 32 s, no `CARGO_NET_GIT_FETCH_WITH_CLI` needed. How it got there:
+  the user first found `CARGO_NET_GIT_FETCH_WITH_CLI=true cargo install …` too complex and asked for an `install.sh`
+  run with `curl … | sh`; the script was written (`dev_sync --version` came with it), but `curl` gets a 404 from
+  `raw.githubusercontent.com` for a private repository, and GitHub serves no single file over ssh (`git archive
+  --remote` is refused: "Invalid command: git-upload-archive"); a one-liner that cloned into a temporary folder and
+  ran the script was too clumsy. The plain command turned out short, and cargo already warns when `~/.cargo/bin` is
+  not on `PATH` — the script's only real addition, since it needed Rust anyway — so `install.sh` was removed at the
+  user's call.
 - **Published** (2026-09-30, at the user's request, which lifts §14's commit rule and §16's no-push rule for this):
   the worktree was left, the code committed on `main` in `~/dev/dev_sync`, and `main` pushed to the empty
   `git@github.com:ferrisoft/dev_sync.git`.
