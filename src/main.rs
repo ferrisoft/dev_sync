@@ -8,6 +8,7 @@ mod domain;
 mod fixtures;
 mod git;
 mod layout;
+mod listing;
 mod parallel;
 mod process;
 mod reconcile;
@@ -66,16 +67,28 @@ fn run(cli: cli::Cli) -> ExitCode {
                 cli::Command::Reporting(command) => {
                     let mut report = report::Report::default();
                     let result = dispatch(&context, command, &mut report);
-                    let mut stdout = std::io::stdout().lock();
-                    stdout.write_all(report.render(report::use_color()).as_bytes()).and_then(|()| stdout.flush()).ok();
+                    print(&report.render(report::use_color()));
                     match result {
                         Ok(()) => report.exit_code(),
                         Err(error) => fail(&error),
                     }
                 }
+                cli::Command::List { dir } => match commands::list(&context, dir.as_deref()) {
+                    Ok(tree) => {
+                        print(&tree);
+                        ExitCode::SUCCESS
+                    }
+                    Err(error) => fail(&error),
+                },
             }
         }
     }
+}
+
+/// Writes `text` to stdout. A closed stdout isn't worth a panic (say, `dev_sync list | head`).
+fn print(text: &str) {
+    let mut stdout = std::io::stdout().lock();
+    stdout.write_all(text.as_bytes()).and_then(|()| stdout.flush()).ok();
 }
 
 fn fail(error: &anyhow::Error) -> ExitCode {

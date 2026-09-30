@@ -56,6 +56,7 @@ From anywhere inside the dev folder (or from anywhere with `--root ~/dev`):
 dev_sync pull      # before you start working
 dev_sync push      # before you switch machines
 dev_sync status    # what push and pull would do, and what exists only here; no network
+dev_sync list      # the dev folder as a tree down to the repositories; red: folders with no repository inside
 ```
 
 - Clone, move and delete repositories with your usual tools; the next push records it.

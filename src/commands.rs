@@ -3,6 +3,7 @@
 mod import;
 mod init;
 mod keep;
+mod list;
 mod merge_driver;
 mod pull;
 mod push;
@@ -12,6 +13,7 @@ mod status;
 pub(crate) use import::import;
 pub(crate) use init::init;
 pub(crate) use keep::keep;
+pub(crate) use list::list;
 pub(crate) use merge_driver::DRIVER_FAILED;
 pub(crate) use merge_driver::merge_driver;
 pub(crate) use pull::PullMode;

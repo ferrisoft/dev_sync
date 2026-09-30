@@ -930,6 +930,26 @@ fn scenario_41_a_remote_named_like_an_option_never_reaches_git() -> anyhow::Resu
 }
 
 #[test]
+fn scenario_42_list_draws_the_dev_folder_down_to_its_repositories() -> anyhow::Result<()> {
+    let world = World::create()?;
+    let Sharing { pair, .. } = pair_sharing(&world, "ferrisoft/app")?;
+    let (laptop, dev2) = (&pair.laptop, pair.laptop.dev2());
+    laptop.clone_into(&world.remote("tool")?, "tool")?;
+    let notes = dev2.join("ferrisoft").join("notes");
+    std::fs::create_dir_all(&notes)?;
+    std::fs::write(notes.join("todo.txt"), "not synced")?;
+    std::fs::create_dir_all(dev2.join("empty"))?;
+    let listed = laptop.run_in(&notes, &["list"], &[])?.ok()?;
+    let whole = "├── empty/ (no repositories)\n├── ferrisoft/\n│   ├── app\n│   └── notes/ (no repositories)\n\
+                 └── tool\n";
+    assert_eq!(listed.stdout, format!("{}/\n{whole}", dev2.display()));
+    let ferrisoft = dev2.join("ferrisoft");
+    let elsewhere = laptop.run_in(laptop.dir(), &["list", path_str(&ferrisoft)?], &[])?.ok()?;
+    assert_eq!(elsewhere.stdout, format!("{}/\n├── app\n└── notes/ (no repositories)\n", ferrisoft.display()));
+    Ok(())
+}
+
+#[test]
 fn scenario_27_a_closed_stderr_never_crashes_a_verbose_run() -> anyhow::Result<()> {
     let world = World::create()?;
     let Sharing { pair, .. } = pair_sharing(&world, "a")?;

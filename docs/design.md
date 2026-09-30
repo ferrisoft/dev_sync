@@ -915,6 +915,7 @@ Commands:
   push                          Record local layout changes, push repos, push the layout
   keep <PATH>                   Put a blocked removal back into the layout
   import <DIR>                  Add the repos found under DIR to the layout (clones nothing)
+  list [DIR]                    Show the folders as a tree down to the repos (added, §19)
   merge-driver <BASE> <LOCAL> <INCOMING> <PATH>   (hidden) git merge driver for repos.toml
 ```
 
@@ -2125,6 +2126,13 @@ Record every change to this design made during implementation, with the reason.
 
 **CLI and output (§9)**
 
+- **`list [DIR]`** (the user's request, 2026-10-01): prints `DIR`, or the workspace root, as a tree drawn like
+  `tree`, going no deeper than a repository. Folders end in `/`; a folder with no repository anywhere inside — so
+  nothing in it is synced — is one red line (with colors off: `(no repositories)`), its inside not listed. Hidden
+  entries, files and symlinks are left out, as the scan leaves them out; a folder whose `.git` is a file is labelled
+  a linked worktree (not synced); an unreadable folder shows the reason instead of stopping the listing. It reads
+  only the disk (not the layout), needs no network, and with `DIR` no workspace, so it also shows a folder before
+  `init`. The tree lives in `listing.rs`; `list` prints it directly rather than as a report.
 - The result of pushing the layout is reported under the layout scope, so it prints after the `recorded …` lines.
   It is read from the porcelain stdout: a rejected push is recognized even with `advice.pushUpdateRejected=false`,
   and a ref the remote refused (a hook, a protected branch) carries the remote's reason.
