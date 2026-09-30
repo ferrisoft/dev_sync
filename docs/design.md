@@ -65,8 +65,8 @@ machines.
 Typical use (the tool repo is `ferrisoft/dev_sync`; the workspace repo URL is an example):
 
 ```sh
-# Once per machine: install dev_sync into ~/.cargo/bin (install.sh; the repo is private for now)
-git clone git@github.com:ferrisoft/dev_sync.git && sh dev_sync/install.sh
+# Once per machine (again to update): install dev_sync into ~/.cargo/bin over ssh, while the repo is private
+sh -c 'd=$(mktemp -d) && git clone -q --depth 1 git@github.com:ferrisoft/dev_sync.git "$d" && sh "$d/install.sh"; rm -rf "$d"'
 # ... or, once the repo is public:
 curl -fsSL https://raw.githubusercontent.com/ferrisoft/dev_sync/main/install.sh | sh
 
@@ -1963,10 +1963,15 @@ Record every change to this design made during implementation, with the reason.
   at the repository root: it checks for git and cargo, runs `cargo install --locked --force` — from its own clone
   when run as a file there, otherwise from `DEV_SYNC_REPOSITORY` (default the https URL) when piped into `sh` —
   then says whether `~/.cargo/bin` is on `PATH` and what to do next. The repository stays private for now ("people
-  who have access will have access") and may become public later, so the README gives `git clone … && sh
-  dev_sync/install.sh` today and the `curl … | sh` form for later; the script needs no change in between.
+  who have access will have access") and may become public later; the script needs no change in between.
   `dev_sync --version` came with it. Tested run from a clone, piped with a local repository as the source, and with
   no cargo on `PATH`.
+- **Installing over ssh while private.** `curl` gets a 404 from `raw.githubusercontent.com` for a private repository,
+  and GitHub serves no single file over ssh (`git archive --remote` is refused: "Invalid command:
+  git-upload-archive"). So the README's command clones into a temporary folder over ssh, runs `install.sh` from it
+  and removes the folder, wrapped in `sh -c` so it works from any shell; running it again updates. Tested against the
+  real repository with the user's ssh key: it installed dev_sync and left nothing in the temporary folder. The
+  `curl … | sh` form stays in the README for when the repository is public.
 - **Published** (2026-09-30, at the user's request, which lifts §14's commit rule and §16's no-push rule for this):
   the worktree was left, the code committed on `main` in `~/dev/dev_sync`, and `main` pushed to the empty
   `git@github.com:ferrisoft/dev_sync.git`.
