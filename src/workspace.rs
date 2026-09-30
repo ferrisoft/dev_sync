@@ -129,46 +129,75 @@ impl Repository {
 }
 
 
-// ============
-// === init ===
-// ============
+// ================
+// === Creation ===
+// ================
 
+pub(crate) const README_FILE: &str = "README.md";
 const GITATTRIBUTES: &str = include_str!("../templates/gitattributes");
+const README_TEMPLATE: &str = include_str!("../templates/workspace-readme.md");
 
-/// Creates a workspace rooted at `dir`: the workspace repository in its `.dev_sync` folder, with `repos.toml` and
-/// `.gitattributes` committed. Clones already in `dir` are left as they are. Returns the canonical root.
-pub(crate) fn init(git: &git::Git, dir: &Path) -> anyhow::Result<PathBuf> {
-    let dir = std::path::absolute(dir).with_context(|| format!("failed to resolve {}", dir.display()))?;
-    anyhow::ensure!(
-        std::fs::symlink_metadata(dir.join(REPOSITORY_DIR)).is_err(),
-        "{} already has a {REPOSITORY_DIR} folder",
-        dir.display()
-    );
-    match dir.ancestors().skip(1).find(|ancestor| is_workspace(ancestor)) {
-        Some(outer) => Err(anyhow::anyhow!(
-            "{} is inside the dev_sync workspace at {}; workspaces can't be nested",
-            dir.display(),
-            outer.display()
-        )),
-        None => Ok(()),
-    }?;
-    let hidden = dir.join(REPOSITORY_DIR);
-    std::fs::create_dir_all(&hidden).with_context(|| format!("failed to create {}", hidden.display()))?;
-    let root = dir.canonicalize().with_context(|| format!("failed to resolve {}", dir.display()))?;
-    let repository = Repository::of(&root);
-    let initialized = git.outside().args(["init", "--quiet", "--initial-branch=main", "--"]).arg(repository.dir());
-    initialized.run_ok(git::Access::Write)?;
-    let empty = layout::render(&layout::Layout::default());
-    let files = [(".gitattributes", GITATTRIBUTES.to_owned()), (LAYOUT_FILE, empty)];
+/// The workspace `dir` lies inside, `dir` itself not counted.
+pub(crate) fn outer_workspace(dir: &Path) -> Option<&Path> {
+    dir.ancestors().skip(1).find(|ancestor| is_workspace(ancestor))
+}
+
+/// The README of a workspace repository published at `remote`: what the repository is, what its files hold, and how to
+/// set up another machine from it.
+pub(crate) fn readme(remote: &domain::RemoteUrl) -> String {
+    README_TEMPLATE.replace("__REMOTE__", &shell::word(remote.as_str()))
+}
+
+/// Fills a workspace repository that has no commit yet, as right after cloning an empty one: an empty `repos.toml`,
+/// `.gitattributes` and the README, committed, with the merge driver registered.
+pub(crate) fn populate(git: &git::Git, repository: &Repository, remote: &domain::RemoteUrl) -> anyhow::Result<()> {
+    let files = [
+        (".gitattributes", GITATTRIBUTES.to_owned()),
+        (LAYOUT_FILE, layout::render(&layout::Layout::default())),
+        (README_FILE, readme(remote)),
+    ];
     for (name, content) in &files {
         std::fs::write(repository.dir().join(name), content).with_context(|| format!("failed to write {name}"))?;
     }
-    register_merge_driver(git, &repository)?;
+    register_merge_driver(git, repository)?;
     let added = git.at(repository.dir()).args(["add", "--"]).args(files.iter().map(|(name, _)| name));
     added.run_ok(git::Access::Write)?;
     let committed = git.at(repository.dir()).args(["commit", "--quiet", "-m", "init dev_sync workspace"]);
-    committed.run_ok(git::Access::Lengthy)?;
-    Ok(root)
+    committed.run_ok(git::Access::Lengthy).map(|_| ())
+}
+
+/// Adds the README to a workspace repository made before there was one. True when it did.
+pub(crate) fn add_missing_readme(
+    git: &git::Git,
+    repository: &Repository,
+    remote: &domain::RemoteUrl,
+) -> anyhow::Result<bool> {
+    let path = repository.dir().join(README_FILE);
+    match std::fs::symlink_metadata(&path).is_ok() {
+        true => Ok(false),
+        false => {
+            std::fs::write(&path, readme(remote)).with_context(|| format!("failed to write {}", path.display()))?;
+            let dir = repository.dir();
+            git.at(dir).args(["add", "--", README_FILE]).run_ok(git::Access::Write)?;
+            let committed = git.at(dir).args(["commit", "--quiet", "-m", "add README.md", "--", README_FILE]);
+            committed.run_ok(git::Access::Lengthy).map(|_| true)
+        }
+    }
+}
+
+/// Whether the repository has no commit yet.
+pub(crate) fn is_unborn(git: &git::Git, repository: &Repository) -> anyhow::Result<bool> {
+    let finished = git.at(repository.dir()).args(["rev-parse", "--verify", "--quiet", "HEAD"]).run(git::Access::Read)?;
+    match finished.code {
+        Some(0) => Ok(false),
+        Some(1) => Ok(true),
+        _ => Err(anyhow::anyhow!("failed to read HEAD of {} ({})", repository.dir().display(), finished.exit())),
+    }
+}
+
+pub(crate) fn add_origin(git: &git::Git, repository: &Repository, url: &domain::RemoteUrl) -> anyhow::Result<()> {
+    let added = git.at(repository.dir()).args(["remote", "add", "--", "origin", url.as_str()]);
+    added.run_ok(git::Access::Write).map(|_| ())
 }
 
 
@@ -428,13 +457,15 @@ mod tests {
 
     use crate::fixtures;
     use super::LAYOUT_FILE;
+    use super::README_FILE;
     use super::REPOSITORY_DIR;
     use super::Repository;
     use super::Workspace;
+    use super::add_missing_readme;
     use super::current_branch;
     use super::driver_command;
-    use super::init;
     use super::layout_modified;
+    use super::outer_workspace;
 
     fn failure<T>(result: anyhow::Result<T>) -> String {
         result.err().map(|error| format!("{error:#}")).unwrap_or_default()
@@ -450,13 +481,12 @@ mod tests {
     }
 
     #[test]
-    fn init_hides_the_repository_where_discovery_finds_it() -> anyhow::Result<()> {
+    fn discovery_finds_the_repository_hidden_in_the_root() -> anyhow::Result<()> {
         let sandbox = fixtures::Sandbox::create()?;
         let git = fixtures::git();
         let dir = sandbox.path().join("dev");
         std::fs::create_dir_all(dir.join("a").join("b"))?;
-        let root = init(&git, &dir)?;
-        assert_eq!(root, dir.canonicalize()?);
+        let root = fixtures::workspace(&dir)?;
         assert!(!root.join(".git").exists() && !root.join(LAYOUT_FILE).exists());
         let workspace = Workspace::discover(&git, Some(&dir.join("a").join("..")))?;
         assert_eq!(workspace.root, root);
@@ -468,25 +498,35 @@ mod tests {
     }
 
     #[test]
-    fn init_refuses_a_second_workspace_or_one_inside_another() -> anyhow::Result<()> {
+    fn the_outer_workspace_is_found_above_but_never_at_the_folder_itself() -> anyhow::Result<()> {
         let sandbox = fixtures::Sandbox::create()?;
-        let git = fixtures::git();
-        let dir = sandbox.path().join("dev");
-        init(&git, &dir)?;
-        assert!(failure(init(&git, &dir)).contains("already has a .dev_sync folder"));
-        let nested = dir.join("team").join("x");
-        assert!(failure(init(&git, &nested)).contains("is inside the dev_sync workspace at"));
-        assert!(!dir.join("team").exists());
-        let leftover = sandbox.path().join("leftover");
-        std::fs::create_dir_all(leftover.join(REPOSITORY_DIR))?;
-        assert!(failure(init(&git, &leftover)).contains("already has a .dev_sync folder"));
+        let root = fixtures::workspace(&sandbox.path().join("dev"))?;
+        assert_eq!(outer_workspace(&root.join("team").join("x")), Some(root.as_path()));
+        assert_eq!(outer_workspace(&root), None);
+        assert_eq!(outer_workspace(sandbox.path()), None);
+        Ok(())
+    }
+
+    #[test]
+    fn the_readme_says_how_to_join_and_is_added_only_where_missing() -> anyhow::Result<()> {
+        let sandbox = fixtures::Sandbox::create()?;
+        let repository = Repository::of(&fixtures::workspace(&sandbox.path().join("dev"))?);
+        let readme = std::fs::read_to_string(repository.dir().join(README_FILE))?;
+        assert!(readme.contains("dev_sync init ~/dev --remote https://example.invalid/dev.git"), "{readme}");
+        let remote = "git@github.com:you/it's.git".parse()?;
+        assert!(!add_missing_readme(&fixtures::git(), &repository, &remote)?);
+        sandbox.git(repository.dir(), &["rm", "--quiet", README_FILE])?;
+        sandbox.git(repository.dir(), &["commit", "--quiet", "-m", "older"])?;
+        assert!(add_missing_readme(&fixtures::git(), &repository, &remote)?);
+        let committed = sandbox.git(repository.dir(), &["show", &format!("HEAD:{README_FILE}")])?;
+        assert!(committed.contains("--remote 'git@github.com:you/it'\\''s.git'"), "{committed}");
         Ok(())
     }
 
     #[test]
     fn reads_the_branch_even_when_a_tag_has_its_name() -> anyhow::Result<()> {
         let sandbox = fixtures::Sandbox::create()?;
-        let repository = Repository::of(&init(&fixtures::git(), &sandbox.path().join("dev"))?);
+        let repository = Repository::of(&fixtures::workspace(&sandbox.path().join("dev"))?);
         sandbox.git(repository.dir(), &["tag", "main"])?;
         assert_eq!(current_branch(&fixtures::git(), &repository)?, Some("main".parse()?));
         sandbox.git(repository.dir(), &["checkout", "--quiet", "--detach"])?;
@@ -497,7 +537,7 @@ mod tests {
     #[test]
     fn a_stash_shown_by_status_is_no_layout_edit() -> anyhow::Result<()> {
         let sandbox = fixtures::Sandbox::create()?;
-        let repository = Repository::of(&init(&fixtures::git(), &sandbox.path().join("dev"))?);
+        let repository = Repository::of(&fixtures::workspace(&sandbox.path().join("dev"))?);
         assert!(!layout_modified(&fixtures::git(), &repository)?);
         std::fs::write(repository.dir().join(".gitattributes"), "stashed\n")?;
         sandbox.git(repository.dir(), &["stash", "--quiet"])?;

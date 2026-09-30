@@ -69,13 +69,10 @@ Typical use (the tool repo is `ferrisoft/dev_sync`; the workspace repo URL is an
 # (over ssh while the repo is private; https://github.com/ferrisoft/dev_sync once it is public)
 cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git
 
-# Once, on the first machine: make the dev folder a workspace and publish it
+# Once, on every machine (it asks for the workspace repository, or pass --remote <url>):
+# on the first one it creates the workspace and publishes the clones already there,
+# on the others it joins the workspace and clones everything
 dev_sync init ~/dev
-git -C ~/dev/.dev_sync remote add origin git@github.com:wdanilo/dev.git
-cd ~/dev && dev_sync push     # records the clones already there, publishes the layout
-
-# Once, on every other machine
-git clone git@github.com:wdanilo/dev.git ~/dev/.dev_sync && cd ~/dev && dev_sync pull
 
 # Daily, from anywhere inside ~/dev
 dev_sync pull              # before starting work
@@ -914,7 +911,7 @@ Commands:
   pull [--continue | --abort]   Merge layout changes from the remote, apply them, update repos
   push                          Record local layout changes, push repos, push the layout
   keep <PATH>                   Put a blocked removal back into the layout
-  import <DIR>                  Add the repos found under DIR to the layout (clones nothing)
+  import <DIR>                  Add the repos found under DIR to the layout (removed, §19)
   list [DIR]                    Show the folders as a tree down to the repos (added, §19)
   merge-driver <BASE> <LOCAL> <INCOMING> <PATH>   (hidden) git merge driver for repos.toml
 ```
@@ -950,10 +947,10 @@ For `status`, `pull`, `push`, `keep` and `import`:
 
 ### 9.3 `init <DIR> --tool-url <URL>`
 
-**Revised (§19):** `init <DIR>` refuses a `DIR/.dev_sync` that exists and a `DIR` inside another
-workspace, creates the workspace repo in `DIR/.dev_sync` with `.gitattributes` and an empty
-`repos.toml`, registers the merge driver and commits. Clones already in `DIR` stay as they are.
-The original steps:
+**Revised (§19):** `init [DIR] [--remote URL]` asks for the workspace repository and does the rest: with an empty
+repository it creates the workspace in `DIR/.dev_sync` and publishes the clones already in `DIR`; with a published
+workspace it joins it and clones everything; a workspace without a remote gets connected. See §19, "`init` asks for
+the workspace repository". The original steps:
 
 1. Refuse if `DIR/.git` or `DIR/repos.toml` already exists.
 2. Create `DIR` if needed, then `git init --quiet --initial-branch=main DIR`.
@@ -1049,6 +1046,9 @@ the snapshot with its URL from disk, commit `<host>: keep <PATH>`, set its statu
 `Synced`, and report "run `./sync push` to publish".
 
 ### 9.8 `import <DIR>`
+
+**Removed (§19):** repositories outside the workspace aren't wanted; `init` on a folder that already holds clones
+records them where they are.
 
 Scan `DIR` with the same rules as §8.1; `DIR` needn't be a workspace, and paths are relative
 to it.
@@ -1943,11 +1943,11 @@ Record every change to this design made during implementation, with the reason.
 - **The merge driver** is always the running executable (`<exe> merge-driver %O %A %B %P`, no `--root`: the driver
   never needed it), re-registered by every changing command, so a reinstalled dev_sync at a new path takes over.
 - **Workspaces never nest.** `init` refuses a folder inside another workspace, and a scan that meets another
-  workspace below its root stops with an error: the clones there would belong to both. A `.dev_sync` at the root of a
-  tree given to `import` is fine.
+  workspace below its root stops with an error: the clones there would belong to both.
 - **A new machine** clones the workspace repository into `<dir>/.dev_sync` and runs `dev_sync pull`; `init` on a
   folder that already holds clones leaves them in place, and the first push records them. So an existing folder like
-  `~/dev` can become a workspace in place; a fresh `~/dev2` is no longer needed (the user decides when).
+  `~/dev` can become a workspace in place; a fresh `~/dev2` is no longer needed (the user decides when). (Since
+  revised: `init` does all of this itself — see "`init` asks for the workspace repository".)
 - **User-facing text** says `dev_sync <command>` instead of `./sync <command>`, and `repos.toml`'s header says
   "Written by dev_sync.".
 - **Tests.** Scenarios 18 (self-update), 21b and 21c (the launcher) were replaced by 18 (the workspace is found from
@@ -2126,6 +2126,29 @@ Record every change to this design made during implementation, with the reason.
 
 **CLI and output (§9)**
 
+- **`init` asks for the workspace repository and does the rest** (the user, 2026-10-01: "this tool should be easy.
+  running some deep git commands is out of scope - it should ask me about the repo during init"). `init [DIR]
+  [--remote URL]`: `DIR` defaults to the current folder, and the URL is asked for on the terminal when not given (read
+  from stdin; an empty answer is refused). Folders that can't be set up are refused before asking: one inside another
+  workspace, one already connected to a repository, one whose `.dev_sync` isn't a workspace. Otherwise:
+  - no `.dev_sync` yet: the URL is cloned into `DIR/.dev_sync` (retried on network failures, removed on any failure).
+    An empty repository means the first machine: `init` writes `repos.toml`, `.gitattributes` and a `README.md`,
+    commits, records the clones already in `DIR` and pushes the layout (`-u`). A published workspace means another
+    machine: `init` pulls (clones everything, fast-forwards), then pushes what this machine recorded. A repository
+    with history but no `repos.toml` is not a workspace: its clone is removed and `init` refuses;
+  - a workspace without a remote (made by the earlier `init`): `origin` is added, then pull and push as above.
+
+  No git command is left for the user: hints about a missing remote say to run `dev_sync init`. The layout merge now
+  passes `--allow-unrelated-histories`, so connecting a separately made workspace to a published one merges their
+  layouts (with no merge base, the in-process merge starts from an empty layout).
+- **`README.md` in the workspace repository** (the user, 2026-10-01: "README.md should be generated next to the files,
+  so its obvious what it is and what it contains"): written by `init` (and added by it to a workspace made before),
+  tracked. It says what the repository is, what `repos.toml`, `.gitattributes` and itself hold, and gives the
+  `dev_sync init ~/dev --remote <url>` command for another machine, with the repository's URL filled in. It lists no
+  repositories, so it never changes and never conflicts.
+- **`import` removed** (the user, 2026-10-01: "we dont want repos outside of workspace"). `init` on a folder that
+  already holds clones records them in place, which covered the case `import` was made for.
+
 - **`list [DIR]`** (the user's request, 2026-10-01): prints `DIR`, or the workspace root, as a tree drawn like
   `tree`, going no deeper than a repository. Folders end in `/`; a folder with no repository anywhere inside — so
   nothing in it is synced — is one red line (with colors off: `(no repositories)`), its inside not listed. Hidden
@@ -2140,6 +2163,7 @@ Record every change to this design made during implementation, with the reason.
   up to date`.
 - The self-update re-exec passes `--verbose` along when it was given.
 - `import` writes `import 1 repo` / `import N repos`, and refuses a directory inside or containing the workspace.
+  (`import` was removed later; see above.)
 - Added modules: `commands/session.rs` (lock, preamble, shared record/reconcile steps), `parallel.rs`, `shell.rs`,
   `fixtures.rs` (tests only).
 - **Exit codes** (after review): §9.10's "every error exits 1" would make git read a failed merge driver as a

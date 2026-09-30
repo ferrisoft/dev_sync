@@ -37,7 +37,7 @@ pub(crate) fn pull(context: &session::Context, mode: PullMode, report: &mut repo
 }
 
 /// Record local changes, merge the remote layout, make the disk match, then pull repo contents.
-fn plain(
+pub(super) fn plain(
     context: &session::Context,
     workspace: workspace::Workspace,
     report: &mut report::Report,
@@ -153,16 +153,12 @@ fn merge_upstream(session: &session::Session<'_>, report: &mut report::Report) -
 
 fn track_origin(session: &session::Session<'_>, report: &mut report::Report) -> anyhow::Result<Tracking> {
     let (git, repository, branch) = (session.git(), session.repository(), &session.branch);
-    anyhow::ensure!(
-        workspace::has_remote(git, repository, "origin")?,
-        "the workspace repo has no origin remote; add one with `git -C {} remote add origin <url>`",
-        repository.shell_word()
-    );
+    anyhow::ensure!(workspace::has_remote(git, repository, "origin")?, "{}", session::NOT_CONNECTED);
     match fetch(session, &domain::RemoteName::origin(), report)? {
         Fetched::Failed => Ok(Tracking::Failed),
         Fetched::Done => match workspace::ref_exists(git, repository, &format!("refs/remotes/origin/{branch}"))? {
             false => {
-                let message = format!("origin has no {branch} yet; `dev_sync push` creates it");
+                let message = format!("origin has no {branch} yet; the next push creates it");
                 report.info(report::Scope::Workspace, message);
                 Ok(Tracking::Missing)
             }
@@ -245,7 +241,8 @@ fn merge(
     let driver = format!("merge.dev-sync.driver={}", workspace::driver_command(&executable)?);
     let merged = git
         .at(repository.dir())
-        .args(["-c", &driver, "merge", "--no-edit", "--quiet", "--ff", "--no-commit", &upstream.full_ref])
+        .args(["-c", &driver, "merge", "--no-edit", "--quiet", "--ff", "--no-commit", "--allow-unrelated-histories"])
+        .arg(&upstream.full_ref)
         .run(git::Access::Lengthy)?;
     let merging = workspace::merge_in_progress(git, repository)?;
     tracing::debug!(

@@ -19,6 +19,7 @@ use anyhow::Context as _;
 use crate::domain;
 use crate::git;
 use crate::layout;
+use crate::workspace;
 
 
 // ==============
@@ -220,6 +221,22 @@ impl Sandbox {
         self.git(repo, &["commit", "--quiet", "-m", &format!("change {file}")])?;
         Ok(())
     }
+}
+
+
+// =================
+// === workspace ===
+// =================
+
+/// A workspace rooted at `root`, as `init` makes one before publishing it: the repository in `.dev_sync`, populated
+/// and committed, without a remote. Returns the canonical root.
+pub(crate) fn workspace(root: &Path) -> anyhow::Result<PathBuf> {
+    let (git, repository) = (git(), workspace::Repository::of(root));
+    std::fs::create_dir_all(repository.dir())?;
+    let initialized = git.outside().args(["init", "--quiet", "--initial-branch=main", "--"]).arg(repository.dir());
+    initialized.run_ok(git::Access::Write)?;
+    workspace::populate(&git, &repository, &url("https://example.invalid/dev.git")?)?;
+    Ok(root.canonicalize()?)
 }
 
 

@@ -51,18 +51,15 @@ fn layout_remote(upstream: &git::Upstream, branch: &domain::BranchName) -> anyho
     }
 }
 
-fn push_layout(session: &session::Session<'_>, report: &mut report::Report) -> anyhow::Result<()> {
+/// Pushes the workspace branch to its upstream, or to `origin` with `-u` when it has none yet.
+pub(super) fn push_layout(session: &session::Session<'_>, report: &mut report::Report) -> anyhow::Result<()> {
     let (git, repository, branch) = (session.git(), session.repository(), &session.branch);
     let upstream = workspace::upstream(git, repository, branch)?;
     let remote = match &upstream {
         None => Ok(domain::RemoteName::origin()),
         Some(upstream) => layout_remote(upstream, branch),
     }?;
-    anyhow::ensure!(
-        workspace::has_remote(git, repository, remote.as_str())?,
-        "the workspace repo has no {remote} remote; add one with `git -C {} remote add {remote} <url>`",
-        repository.shell_word()
-    );
+    anyhow::ensure!(workspace::has_remote(git, repository, remote.as_str())?, "{}", session::NOT_CONNECTED);
     let invocation = match &upstream {
         Some(upstream) => {
             let refspec = format!("refs/heads/{branch}:{}", upstream.remote_ref);

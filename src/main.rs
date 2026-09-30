@@ -106,7 +106,7 @@ fn dispatch(
     report: &mut report::Report,
 ) -> anyhow::Result<()> {
     match command {
-        cli::ReportingCommand::Init { dir } => commands::init(context, &dir, report),
+        cli::ReportingCommand::Init { dir, remote } => commands::init(context, dir.as_deref(), remote, report),
         cli::ReportingCommand::Status => commands::status(context, report),
         cli::ReportingCommand::Pull { resume, abort } => {
             let mode = match (resume, abort) {

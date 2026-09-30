@@ -19,6 +19,15 @@ use crate::state;
 use crate::workspace;
 
 
+// =====================
+// === NOT_CONNECTED ===
+// =====================
+
+/// What to say when the workspace repository has no remote to sync with.
+pub(crate) const NOT_CONNECTED: &str =
+    "the workspace isn't connected to a repository yet — run `dev_sync init` to connect it";
+
+
 // ===============
 // === Context ===
 // ===============

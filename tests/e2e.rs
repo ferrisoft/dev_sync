@@ -30,10 +30,8 @@ fn pair(world: &World) -> anyhow::Result<Pair<'_>> {
     let workspace = world.empty_remote("dev2")?;
     let laptop = world.machine("laptop")?;
     laptop.init_workspace(&workspace)?;
-    laptop.run(&["push"])?.ok()?;
     let demeter = world.machine("demeter")?;
-    demeter.clone_workspace(&workspace)?;
-    demeter.run(&["pull"])?.ok()?;
+    demeter.init_workspace(&workspace)?;
     Ok(Pair { laptop, demeter })
 }
 
@@ -96,25 +94,29 @@ fn names_in(dir: &Path) -> anyhow::Result<Vec<String>> {
 // =================
 
 #[test]
-fn scenario_01_init_hides_the_workspace_repository_in_the_dev_folder() -> anyhow::Result<()> {
+fn scenario_01_init_creates_the_workspace_and_publishes_what_is_there() -> anyhow::Result<()> {
     let world = World::create()?;
     let laptop = world.machine("laptop")?;
-    let dev2 = laptop.dev2();
-    let remote = world.remote("x")?;
+    let (dev2, workspace_remote, remote) = (laptop.dev2(), world.empty_remote("dev2")?, world.remote("x")?);
     let existing = laptop.clone_into(&remote, "ferrisoft/x")?;
-    let created = laptop.run_in(laptop.dir(), &["init", path_str(&dev2)?], &[])?.ok()?;
-    assert!(created.stdout.contains("remote add origin"), "{created:#?}");
+    let unanswered = laptop.run_in(&dev2, &["init"], &[])?.exits(1)?;
+    assert!(unanswered.stderr.contains("--remote"), "{unanswered:#?}");
+    assert!(!laptop.workspace().exists());
+    let created = laptop.run_in(&dev2, &["init", "--remote", path_str(&workspace_remote)?], &[])?.ok()?;
+    for line in ["created the dev_sync workspace", "recorded +ferrisoft/x", "pushed the layout to origin"] {
+        assert!(created.stdout.contains(line), "{line}: {created:#?}");
+    }
     assert_eq!(names_in(&dev2)?, [".dev_sync", "ferrisoft"]);
-    assert_eq!(names_in(&laptop.workspace())?, [".git", ".gitattributes", "repos.toml"]);
-    assert_eq!(laptop.last_subject()?, "init dev_sync workspace");
-    assert_eq!(laptop.git(&laptop.workspace(), &["status", "--porcelain"])?, "");
+    assert_eq!(names_in(&laptop.workspace())?, [".git", ".gitattributes", "README.md", "repos.toml"]);
+    let published = world.git(&workspace_remote, &["log", "--format=%s", "main"])?;
+    assert_eq!(published, "laptop: +ferrisoft/x\ninit dev_sync workspace\n");
+    let readme = world.git(&workspace_remote, &["show", "main:README.md"])?;
+    assert!(readme.contains(&format!("--remote {}", path_str(&workspace_remote)?)), "{readme}");
     let driver = laptop.git(&laptop.workspace(), &["config", "merge.dev-sync.driver"])?;
-    assert!(driver.trim().ends_with(" merge-driver %O %A %B %P") && !driver.contains("--root"), "{driver}");
+    assert!(driver.trim().ends_with(" merge-driver %O %A %B %P"), "{driver}");
     assert_eq!(laptop.origin(&existing)?, path_str(&remote)?);
-    let status = laptop.run(&["status"])?.ok()?;
-    assert!(status.stdout.contains("not recorded yet: +ferrisoft/x"), "{status:#?}");
-    let again = laptop.run_in(laptop.dir(), &["init", path_str(&dev2)?], &[])?.exits(1)?;
-    assert!(again.stderr.contains("already has a .dev_sync folder"), "{again:#?}");
+    let again = laptop.run_in(&dev2, &["init", "--remote", path_str(&workspace_remote)?], &[])?.exits(1)?;
+    assert!(again.stderr.contains("already a dev_sync workspace"), "{again:#?}");
     Ok(())
 }
 
@@ -323,8 +325,8 @@ fn scenario_12_an_unreachable_workspace_remote_changes_nothing() -> anyhow::Resu
     let world = World::create()?;
     let laptop = world.machine("laptop")?;
     let dead = format!("http://127.0.0.1:{}/x.git", support::closed_port()?);
-    laptop.run_in(laptop.dir(), &["init", path_str(&laptop.dev2())?], &[])?.ok()?;
-    laptop.git(&laptop.workspace(), &["remote", "add", "origin", &dead])?;
+    laptop.init_workspace(&world.empty_remote("dev2")?)?;
+    laptop.git(&laptop.workspace(), &["remote", "set-url", "origin", &dead])?;
     laptop.clone_into(&world.remote("x")?, "x")?;
     let before = listing(&laptop.dev2().join("x"))?;
     let pulled = laptop.run(&["pull"])?.exits(1)?;
@@ -360,8 +362,8 @@ fn scenario_14_a_stalled_remote_is_stopped() -> anyhow::Result<()> {
     let world = World::create()?;
     let laptop = world.machine("laptop")?;
     let server = support::Server::silent()?;
-    laptop.run_in(laptop.dir(), &["init", path_str(&laptop.dev2())?], &[])?.ok()?;
-    laptop.git(&laptop.workspace(), &["remote", "add", "origin", &server.url()])?;
+    laptop.init_workspace(&world.empty_remote("dev2")?)?;
+    laptop.git(&laptop.workspace(), &["remote", "set-url", "origin", &server.url()])?;
     let started = Instant::now();
     let short_limit = Variable { name: "DEV_SYNC_NETWORK_TIMEOUT_SECS", value: OsStr::new("2") };
     let pulled = laptop.run_in(&laptop.dev2(), &["pull"], &[short_limit])?.exits(1)?;
@@ -376,8 +378,8 @@ fn scenario_15_an_auth_failure_is_not_retried() -> anyhow::Result<()> {
     let world = World::create()?;
     let laptop = world.machine("laptop")?;
     let server = support::Server::unauthorized()?;
-    laptop.run_in(laptop.dir(), &["init", path_str(&laptop.dev2())?], &[])?.ok()?;
-    laptop.git(&laptop.workspace(), &["remote", "add", "origin", &server.url()])?;
+    laptop.init_workspace(&world.empty_remote("dev2")?)?;
+    laptop.git(&laptop.workspace(), &["remote", "set-url", "origin", &server.url()])?;
     let pulled = laptop.run(&["pull"])?.exits(1)?;
     assert!(pulled.stdout.contains("(auth)"), "{pulled:#?}");
     assert!(!pulled.stdout.contains("attempts"), "{pulled:#?}");
@@ -804,7 +806,7 @@ fn scenario_37_quiet_runs_still_say_how_things_are() -> anyhow::Result<()> {
     pair.demeter.git(&pair.demeter.workspace(), &["remote", "remove", "origin"])?;
     let status = pair.demeter.run(&["status"])?.exits(1)?;
     assert!(status.stdout.contains("✗ failed to read the origin of"), "{status:#?}");
-    assert!(status.stdout.contains("the workspace has no origin remote yet"), "{status:#?}");
+    assert!(status.stdout.contains("isn't connected to a repository yet — run `dev_sync init`"), "{status:#?}");
     Ok(())
 }
 
@@ -915,6 +917,52 @@ fn scenario_42_list_draws_the_dev_folder_down_to_its_repositories() -> anyhow::R
     assert_eq!(elsewhere.stdout, format!("{}/\n├── app\n└── notes/ (no repositories)\n", ferrisoft.display()));
     let missing = laptop.run_in(laptop.dir(), &["list", path_str(&dev2.join("missing"))?], &[])?.exits(1)?;
     assert!(missing.stderr.contains("missing doesn't exist") && !missing.stderr.contains("os error"), "{missing:#?}");
+    Ok(())
+}
+
+#[test]
+fn scenario_43_init_joins_a_published_workspace_and_refuses_anything_else() -> anyhow::Result<()> {
+    let world = World::create()?;
+    let workspace_remote = world.empty_remote("dev2")?;
+    let laptop = world.machine("laptop")?;
+    laptop.init_workspace(&workspace_remote)?;
+    laptop.clone_into(&world.remote("x")?, "a/x")?;
+    laptop.run(&["push"])?.ok()?;
+    let demeter = world.machine("demeter")?;
+    let joined = demeter.init_workspace(&workspace_remote)?;
+    for line in ["joined the dev_sync workspace", "cloned a/x"] {
+        assert!(joined.stdout.contains(line), "{line}: {joined:#?}");
+    }
+    assert!(demeter.dev2().join("a").join("x").join(".git").is_dir());
+    let other = demeter.dir().join("other");
+    let code = world.remote("code")?;
+    let refused = demeter.run_in(demeter.dir(), &["init", path_str(&other)?, "--remote", path_str(&code)?], &[])?;
+    assert!(refused.exits(1)?.stderr.contains("isn't a dev_sync workspace repository"));
+    assert!(!other.join(".dev_sync").exists());
+    std::fs::create_dir_all(other.join(".dev_sync"))?;
+    let remote = path_str(&workspace_remote)?;
+    let stray = demeter.run_in(demeter.dir(), &["init", path_str(&other)?, "--remote", remote], &[])?;
+    assert!(stray.exits(1)?.stderr.contains("isn't a dev_sync workspace"));
+    Ok(())
+}
+
+#[test]
+fn scenario_44_init_connects_a_workspace_that_has_no_remote_yet() -> anyhow::Result<()> {
+    let world = World::create()?;
+    let laptop = world.machine("laptop")?;
+    laptop.init_workspace(&world.empty_remote("first")?)?;
+    let workspace = laptop.workspace();
+    laptop.git(&workspace, &["remote", "remove", "origin"])?;
+    laptop.git(&workspace, &["rm", "--quiet", "README.md"])?;
+    laptop.git(&workspace, &["commit", "--quiet", "-m", "a workspace from before README.md"])?;
+    laptop.clone_into(&world.remote("x")?, "x")?;
+    let unconnected = laptop.run(&["push"])?.exits(1)?;
+    assert!(unconnected.stderr.contains("`dev_sync init`"), "{unconnected:#?}");
+    let second = world.empty_remote("second")?;
+    let connected = laptop.run(&["init", "--remote", path_str(&second)?])?.ok()?;
+    assert!(connected.stdout.contains("connected the dev_sync workspace"), "{connected:#?}");
+    assert!(world.git(&second, &["log", "--format=%s", "main"])?.contains("laptop: +x"));
+    assert!(world.git(&second, &["show", "main:README.md"])?.contains("dev_sync workspace"));
     Ok(())
 }
 

@@ -33,20 +33,17 @@ Add `--force` to update; `cargo uninstall dev_sync` removes it.
 
 ## Set up
 
-On the first machine:
+Create an empty private repository for your workspace (for example `git@github.com:you/dev.git`), then on every
+machine run:
 
 ```sh
-dev_sync init ~/dev                                              # adds ~/dev/.dev_sync; your clones stay put
-git -C ~/dev/.dev_sync remote add origin git@github.com:<you>/dev.git    # an empty private repository
-cd ~/dev && dev_sync push                                        # records your clones and publishes the list
+dev_sync init ~/dev
 ```
 
-On every other machine:
-
-```sh
-git clone git@github.com:<you>/dev.git ~/dev/.dev_sync
-cd ~/dev && dev_sync pull                                        # clones everything
-```
+It asks for the repository's address (or pass it with `--remote`). On the first machine it creates the workspace,
+records the clones already in `~/dev` (they stay where they are) and publishes the list; on every other machine it
+joins the workspace and clones everything that's missing. The workspace repository gets a `README.md` saying what it
+is and how to set up another machine from it.
 
 ## Daily use
 

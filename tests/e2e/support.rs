@@ -182,17 +182,10 @@ impl Machine<'_> {
         Ok(command.output()?)
     }
 
-    /// Creates the workspace with `init` and points its origin at `remote`.
-    pub fn init_workspace(&self, remote: &Path) -> anyhow::Result<()> {
-        self.run_in(&self.dir, &["init", path_str(&self.dev2())?], &[])?.ok()?;
-        self.git(&self.workspace(), &["remote", "add", "origin", path_str(remote)?])?;
-        Ok(())
-    }
-
-    /// Clones the workspace repository into the dev folder's `.dev_sync`, as on a new machine.
-    pub fn clone_workspace(&self, remote: &Path) -> anyhow::Result<()> {
-        self.git(&self.dir, &["clone", "--quiet", path_str(remote)?, path_str(&self.workspace())?])?;
-        Ok(())
+    /// Runs `init` on the machine's dev folder with `remote` as the workspace repository: it creates the workspace when
+    /// `remote` is empty and joins it otherwise.
+    pub fn init_workspace(&self, remote: &Path) -> anyhow::Result<Run> {
+        self.run_in(&self.dir, &["init", path_str(&self.dev2())?, "--remote", path_str(remote)?], &[])?.ok()
     }
 
     /// Clones `remote` into the workspace at `relative`.

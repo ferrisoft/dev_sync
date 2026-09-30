@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use crate::domain;
+
 
 // ===========
 // === Cli ===
@@ -53,10 +55,13 @@ pub(crate) enum Command {
 /// The commands that end with a report.
 #[derive(Debug, clap::Subcommand)]
 pub(crate) enum ReportingCommand {
-    /// Make DIR a workspace: its layout goes in a git repository in DIR/.dev_sync
+    /// Set a dev folder up: create the workspace on the first machine, join it on the others
     Init {
-        /// The dev folder (relative to the current directory); clones already in it stay as they are
-        dir: PathBuf,
+        /// The dev folder (default: the current folder); clones already in it stay where they are
+        dir: Option<PathBuf>,
+        /// The workspace repository, e.g. git@github.com:you/dev.git (asked for when not given)
+        #[arg(long, value_name = "URL", value_parser = parse_url)]
+        remote: Option<domain::RemoteUrl>,
     },
     /// Show what push and pull would do (no network)
     Status,
@@ -76,4 +81,8 @@ pub(crate) enum ReportingCommand {
         /// The blocked repository (relative to the current directory)
         path: PathBuf,
     },
+}
+
+fn parse_url(text: &str) -> Result<domain::RemoteUrl, String> {
+    text.parse().map_err(|error: anyhow::Error| format!("{error:#}"))
 }

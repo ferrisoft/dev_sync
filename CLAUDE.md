@@ -13,7 +13,7 @@ teammates install from it.
 
 ```sh
 cargo build
-cargo test                                  # ~240 unit tests + 44 end-to-end scenarios (real git, ~7 s)
+cargo test                                  # ~240 unit tests + 45 end-to-end scenarios (real git, ~7 s)
 cargo clippy --all-targets -- -D warnings   # must be clean; never #[allow] in production code
 cargo run -- --root <workspace> status      # during development
 cargo install --locked --path .             # install this checkout as `dev_sync` (release build, ~30 s)
@@ -105,7 +105,14 @@ stopped, default 300) / `DEV_SYNC_RETRY_BASE_DELAY_MS` (tests; unparsable = star
   deleted afterwards); a removal fetches first so stale remote-tracking refs can't make local work look pushed.
 - NixOS's `cc` wrapper can't link when `CARGO_TARGET_DIR` contains `'` or non-ASCII, so never point a build at such
   a path (tests that build something must keep their target directory on a plain path).
-- User-facing text names commands as `dev_sync <command>`, never `./sync …` (the launcher is gone).
+- User-facing text names commands as `dev_sync <command>`, never `./sync …` (the launcher is gone), and never asks
+  the user to run git: a missing remote points at `dev_sync init` (`session::NOT_CONNECTED`).
+- `init` sets everything up from the workspace repository's URL (`--remote`, or asked on the terminal): it clones the
+  URL into `DIR/.dev_sync` and then creates (empty repository: populate + publish), joins (pull + publish) or refuses;
+  a workspace without a remote gets connected. Tests always pass `--remote`: their stdin is null, so a run without it
+  fails at once instead of waiting. The e2e harness sets up both machines with `init`.
+- The workspace repository's `README.md` comes from `templates/workspace-readme.md` with the URL filled in; it lists
+  no repositories on purpose, so it never changes and never conflicts.
 - Users install with `cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git` (README). When
   trying an install, set `CARGO_INSTALL_ROOT` to a scratch folder: without it, the run installs into the real
   `~/.cargo/bin`.

@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn a_workspace_below_the_root_is_an_error() -> anyhow::Result<()> {
         let tree = Tree::new()?;
-        workspace::init(&fixtures::git(), &tree.root)?;
+        fixtures::workspace(&tree.root)?;
         tree.clone_at("a")?;
         assert_eq!(tree.paths()?, vec!["a"]);
         let inner = tree.root.join("team");

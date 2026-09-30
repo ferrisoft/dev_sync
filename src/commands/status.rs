@@ -66,13 +66,7 @@ fn workspace_status(
                 let message = "the workspace isn't published yet — `dev_sync push` publishes it".to_owned();
                 report.info(scope.clone(), message);
             }
-            None => report.info(
-                scope.clone(),
-                format!(
-                    "the workspace has no origin remote yet — add one with `git -C {repository_word} remote add \
-                     origin <url>`"
-                ),
-            ),
+            None => report.info(scope.clone(), session::NOT_CONNECTED.to_owned()),
             Some(_) if merging => {}
             Some(upstream) => {
                 let name = upstream.short_name();
