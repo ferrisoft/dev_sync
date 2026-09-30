@@ -872,6 +872,8 @@ fn scenario_39_command_edges() -> anyhow::Result<()> {
     pair.laptop.run_in(&dev2.join("p").join("q"), &["status"], &[])?.ok()?;
     pair.laptop.run(&["no-such-command"])?.exits(1)?;
     pair.laptop.run(&["--help"])?.ok()?;
+    let version = pair.laptop.run(&["--version"])?.ok()?;
+    assert_eq!(version.stdout, format!("dev_sync {}\n", env!("CARGO_PKG_VERSION")));
     let kept = pair.laptop.run(&["keep", "p/q"])?.exits(1)?;
     assert!(kept.stderr.contains("isn't a blocked removal"), "{kept:#?}");
     std::fs::remove_dir_all(dev2.join("p"))?;

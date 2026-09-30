@@ -21,14 +21,21 @@ credential helper for the repositories in your list — dev_sync runs your `git`
 
 ## Install
 
+The repository is private for now, so install from a clone (you need access to ferrisoft repositories):
+
 ```sh
-CARGO_NET_GIT_FETCH_WITH_CLI=true cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git
+git clone git@github.com:ferrisoft/dev_sync.git && sh dev_sync/install.sh
 ```
 
-- The program lands in `~/.cargo/bin`; make sure that is on your `PATH`.
-- `CARGO_NET_GIT_FETCH_WITH_CLI=true` makes cargo fetch the repository with your own git and ssh setup, so the ssh
-  key you use for other ferrisoft repositories works here too.
-- To update, run the same command with `--force`. From a checkout of this repository: `cargo install --locked --path .`
+The script builds dev_sync (about a minute), installs it into `~/.cargo/bin`, and tells you if that folder isn't on
+your `PATH` yet. To update, run it again from an updated clone: `git -C dev_sync pull && sh dev_sync/install.sh`. To
+remove dev_sync: `cargo uninstall dev_sync`.
+
+Once the repository is public, this does the same without a clone:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ferrisoft/dev_sync/main/install.sh | sh
+```
 
 ## Set up
 

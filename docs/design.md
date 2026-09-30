@@ -65,8 +65,10 @@ machines.
 Typical use (the tool repo is `ferrisoft/dev_sync`; the workspace repo URL is an example):
 
 ```sh
-# Once per machine: install dev_sync (the binary lands in ~/.cargo/bin)
-CARGO_NET_GIT_FETCH_WITH_CLI=true cargo install --locked --git ssh://git@github.com/ferrisoft/dev_sync.git
+# Once per machine: install dev_sync into ~/.cargo/bin (install.sh; the repo is private for now)
+git clone git@github.com:ferrisoft/dev_sync.git && sh dev_sync/install.sh
+# ... or, once the repo is public:
+curl -fsSL https://raw.githubusercontent.com/ferrisoft/dev_sync/main/install.sh | sh
 
 # Once, on the first machine: make the dev folder a workspace and publish it
 dev_sync init ~/dev
@@ -1957,6 +1959,14 @@ Record every change to this design made during implementation, with the reason.
 
 **Process**
 
+- **`install.sh`** (2026-09-30, at the user's request: the `cargo install` line was too complex). A POSIX sh script
+  at the repository root: it checks for git and cargo, runs `cargo install --locked --force` — from its own clone
+  when run as a file there, otherwise from `DEV_SYNC_REPOSITORY` (default the https URL) when piped into `sh` —
+  then says whether `~/.cargo/bin` is on `PATH` and what to do next. The repository stays private for now ("people
+  who have access will have access") and may become public later, so the README gives `git clone … && sh
+  dev_sync/install.sh` today and the `curl … | sh` form for later; the script needs no change in between.
+  `dev_sync --version` came with it. Tested run from a clone, piped with a local repository as the source, and with
+  no cargo on `PATH`.
 - **Published** (2026-09-30, at the user's request, which lifts §14's commit rule and §16's no-push rule for this):
   the worktree was left, the code committed on `main` in `~/dev/dev_sync`, and `main` pushed to the empty
   `git@github.com:ferrisoft/dev_sync.git`.

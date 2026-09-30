@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 /// Keeps a dev folder of independent git clones identical across machines.
 #[derive(Debug, clap::Parser)]
-#[command(name = "dev_sync")]
+#[command(name = "dev_sync", version)]
 pub(crate) struct Cli {
     /// The workspace root (default: the nearest directory above holding a .dev_sync folder)
     #[arg(long, global = true, value_name = "DIR")]
