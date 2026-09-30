@@ -30,6 +30,11 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     #[command(flatten)]
     Reporting(ReportingCommand),
+    /// Show the folders as a tree down to the repositories; folders with no repository inside are red
+    List {
+        /// The folder to show (default: the workspace)
+        dir: Option<PathBuf>,
+    },
     /// The git merge driver for repos.toml
     #[command(hide = true)]
     MergeDriver {
