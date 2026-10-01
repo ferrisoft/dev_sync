@@ -41,7 +41,7 @@ denied by clippy (see `Cargo.toml`). Signals go through `rustix` (safe API), nev
 | `reconcile/` | `facts.rs` (disk facts), `plan.rs` (pure planner + the `landing` check), `execute.rs` (trash/move/set-url/clone, restore moves) |
 | `content.rs` | fetch / fast-forward / push of each repo's commits (pure decisions + execution) |
 | `workspace.rs` | `Workspace` (root) and `Repository` (the hidden `.dev_sync` repo), discovery, `init`, merge-driver registration, workspace git queries, atomic layout commit (+ recovery of an interrupted one) |
-| `listing.rs` | the tree `list` prints: a walk that stops at repositories and collapses folders without one, and its `tree`-style rendering |
+| `listing.rs` | the tree `list` prints: a walk that stops at repositories and collapses folders without one, the colored notes on each repository (`notes`, from `git::inspect` + origin), and its `tree`-style rendering |
 | `report.rs` | `Report`/`Item`/`Severity`/`Scope`, rendering, exit code |
 | `parallel.rs` | bounded, order-preserving `map` on scoped threads |
 | `shell.rs` | sh quoting for the driver command and hints |

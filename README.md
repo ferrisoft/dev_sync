@@ -53,9 +53,13 @@ From anywhere inside the dev folder (or from anywhere with `--root ~/dev`):
 dev_sync pull      # before you start working
 dev_sync push      # before you switch machines
 dev_sync status    # what push and pull would do, and what exists only here; no network
-dev_sync list      # the dev folder as a tree down to the repositories; red: folders with no repository inside
+dev_sync list      # the dev folder as a tree of repositories, each with notes (see below)
 ```
 
+- `dev_sync list` shows each repository's state after its name, as of its last fetch: `main ↓22` (commits to pull,
+  cyan), `main ↑3`, `modified`, `no origin` (exists only here, yellow), `main ↑1 ↓2`, `conflicts`, `merge in progress`
+  (needs you, red), and quieter `untracked files` and `stash`. A folder with no repository inside is red: nothing in it
+  is synced.
 - Clone, move and delete repositories with your usual tools; the next push records it.
 - A clone inside a hidden folder (such as `~/dev/.scratch/x`) is never synced, and one without an `origin` remote is
   only reported.

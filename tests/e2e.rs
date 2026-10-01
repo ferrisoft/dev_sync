@@ -901,20 +901,27 @@ fn scenario_41_a_remote_named_like_an_option_never_reaches_git() -> anyhow::Resu
 #[test]
 fn scenario_42_list_draws_the_dev_folder_down_to_its_repositories() -> anyhow::Result<()> {
     let world = World::create()?;
-    let Sharing { pair, .. } = pair_sharing(&world, "ferrisoft/app")?;
+    let Sharing { pair, remote } = pair_sharing(&world, "ferrisoft/app")?;
     let (laptop, dev2) = (&pair.laptop, pair.laptop.dev2());
-    laptop.clone_into(&world.remote("tool")?, "tool")?;
+    let tool = laptop.clone_into(&world.remote("tool")?, "tool")?;
+    std::fs::write(tool.join("README"), "edited\n")?;
+    world.commit_to(&remote, "news", "1")?;
+    laptop.git(&dev2.join("ferrisoft").join("app"), &["fetch", "--quiet"])?;
+    let scratch = dev2.join("scratch");
+    std::fs::create_dir_all(&scratch)?;
+    laptop.git(&scratch, &["init", "--quiet"])?;
+    laptop.commit(&scratch, "notes", "only here")?;
     let notes = dev2.join("ferrisoft").join("notes");
     std::fs::create_dir_all(&notes)?;
     std::fs::write(notes.join("todo.txt"), "not synced")?;
     std::fs::create_dir_all(dev2.join("empty"))?;
     let listed = laptop.run_in(&notes, &["list"], &[])?.ok()?;
-    let whole = "├── empty/ (no repositories)\n├── ferrisoft/\n│   ├── app\n│   └── notes/ (no repositories)\n\
-                 └── tool\n";
+    let whole = "├── empty/ (no repositories)\n├── ferrisoft/\n│   ├── app  main ↓1\n│   └── notes/ (no repositories)\n\
+                 ├── scratch  no origin\n└── tool  modified\n";
     assert_eq!(listed.stdout, format!("{}/\n{whole}", dev2.display()));
     let ferrisoft = dev2.join("ferrisoft");
     let elsewhere = laptop.run_in(laptop.dir(), &["list", path_str(&ferrisoft)?], &[])?.ok()?;
-    assert_eq!(elsewhere.stdout, format!("{}/\n├── app\n└── notes/ (no repositories)\n", ferrisoft.display()));
+    assert_eq!(elsewhere.stdout, format!("{}/\n├── app  main ↓1\n└── notes/ (no repositories)\n", ferrisoft.display()));
     let missing = laptop.run_in(laptop.dir(), &["list", path_str(&dev2.join("missing"))?], &[])?.exits(1)?;
     assert!(missing.stderr.contains("missing doesn't exist") && !missing.stderr.contains("os error"), "{missing:#?}");
     Ok(())
@@ -956,11 +963,15 @@ fn scenario_44_init_connects_a_workspace_that_has_no_remote_yet() -> anyhow::Res
     laptop.git(&workspace, &["rm", "--quiet", "README.md"])?;
     laptop.git(&workspace, &["commit", "--quiet", "-m", "a workspace from before README.md"])?;
     laptop.clone_into(&world.remote("x")?, "x")?;
+    let solo = laptop.dev2().join("solo");
+    std::fs::create_dir_all(&solo)?;
+    laptop.git(&solo, &["init", "--quiet"])?;
     let unconnected = laptop.run(&["push"])?.exits(1)?;
     assert!(unconnected.stderr.contains("`dev_sync init`"), "{unconnected:#?}");
     let second = world.empty_remote("second")?;
     let connected = laptop.run(&["init", "--remote", path_str(&second)?])?.ok()?;
     assert!(connected.stdout.contains("connected the dev_sync workspace"), "{connected:#?}");
+    assert_eq!(connected.stdout.matches("solo has no origin remote").count(), 1, "{connected:#?}");
     assert!(world.git(&second, &["log", "--format=%s", "main"])?.contains("laptop: +x"));
     assert!(world.git(&second, &["show", "main:README.md"])?.contains("dev_sync workspace"));
     Ok(())

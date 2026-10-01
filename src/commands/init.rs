@@ -191,7 +191,7 @@ fn publish(
     }
 }
 
-/// Pulls, then publishes what this machine adds, unless the pull stopped.
+/// Pulls, then pushes the layout — with what the pull recorded on this machine — unless the pull stopped.
 fn synchronize(
     context: &session::Context,
     workspace: workspace::Workspace,
@@ -202,7 +202,7 @@ fn synchronize(
     let stopped = workspace::merge_in_progress(&context.git, &repository)? || report.has(report::Severity::Failure);
     match stopped {
         true => Ok(()),
-        false => publish(context, workspace, report),
+        false => push::push_layout(&session::Session::start(context, workspace)?, report),
     }
 }
 

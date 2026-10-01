@@ -2156,6 +2156,16 @@ Record every change to this design made during implementation, with the reason.
   a linked worktree (not synced); an unreadable folder shows the reason instead of stopping the listing. It reads
   only the disk (not the layout), needs no network, and with `DIR` no workspace, so it also shows a folder before
   `init`. The tree lives in `listing.rs`; `list` prints it directly rather than as a report.
+- **`list` notes** (the user, 2026-10-01: it should show "no origin" and commit states "nicely, colored"). After each
+  repository's name, its state as of its last fetch (each repository inspected in parallel, read-only): `no origin`,
+  `<op> in progress`, the current branch against its upstream (`main ↑3`, `main ↓22`, `main ↑1 ↓2`, `main: upstream
+  gone`, `main: no upstream`; `detached`, `main: no commits yet`), `conflicts`, `modified`, `untracked files`, `stash`
+  — joined by ` · `. Colors by what each asks of the user: red needs the user (diverged, conflicts, an operation, a
+  gone upstream, a repository git can't read), yellow exists only here (no origin, unpushed commits, edits, no
+  upstream, detached), cyan is coming in (behind), dim is context (untracked files, stash, no commits yet). Other
+  branches are left to `status`.
+- **`init` no longer records twice.** Joining or connecting pulled (which records) and then recorded again before
+  pushing, so every "has no origin remote" line printed twice; after the pull it now only pushes the layout.
 - The result of pushing the layout is reported under the layout scope, so it prints after the `recorded …` lines.
   It is read from the porcelain stdout: a rejected push is recognized even with `advice.pushUpdateRejected=false`,
   and a ref the remote refused (a hook, a protected branch) carries the remote's reason.

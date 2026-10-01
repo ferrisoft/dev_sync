@@ -1,8 +1,12 @@
-//! The tree `list` prints: a dev folder's folders down to its repositories.
+//! The tree `list` prints: a dev folder's folders down to its repositories, with notes on each repository.
 
+use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
+use std::path::PathBuf;
+
+use crate::git;
 
 
 // =============
@@ -13,13 +17,36 @@ use std::path::Path;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Entry {
     pub(crate) name: String,
+    pub(crate) path: PathBuf,
     pub(crate) kind: Kind,
+}
+
+impl Entry {
+    /// The repositories in the tree, in the order they are drawn.
+    pub(crate) fn repositories(&self) -> Vec<PathBuf> {
+        match &self.kind {
+            Kind::Repository(_) => vec![self.path.clone()],
+            Kind::Folder(children) => children.iter().flat_map(Self::repositories).collect(),
+            Kind::LinkedCheckout | Kind::NoRepositories | Kind::Unreadable(_) => Vec::new(),
+        }
+    }
+
+    /// The tree with each repository's notes taken out of `notes`, by path.
+    pub(crate) fn with_notes(self, notes: &mut BTreeMap<PathBuf, Vec<Note>>) -> Self {
+        let kind = match self.kind {
+            Kind::Repository(own) => Kind::Repository(notes.remove(&self.path).unwrap_or(own)),
+            Kind::Folder(children) => Kind::Folder(children.into_iter().map(|child| child.with_notes(notes)).collect()),
+            kind @ (Kind::LinkedCheckout | Kind::NoRepositories | Kind::Unreadable(_)) => kind,
+        };
+        Self { kind, ..self }
+    }
 }
 
 /// What a folder turned out to be.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Kind {
-    Repository,
+    /// A repository, with what `list` says about it.
+    Repository(Vec<Note>),
     /// A folder whose `.git` is a file or a symlink: a linked worktree or a submodule checkout. Never synced.
     LinkedCheckout,
     /// A folder with something to show inside; its folders, sorted by name.
@@ -35,12 +62,12 @@ pub(crate) enum Kind {
 /// listed.
 pub(crate) fn entry(path: &Path, name: String) -> Entry {
     let kind = match std::fs::symlink_metadata(path.join(".git")) {
-        Ok(metadata) if metadata.is_dir() => Kind::Repository,
+        Ok(metadata) if metadata.is_dir() => Kind::Repository(Vec::new()),
         Ok(_) => Kind::LinkedCheckout,
         Err(error) if error.kind() == ErrorKind::NotFound => folder(path),
         Err(error) => Kind::Unreadable(error.kind().to_string()),
     };
-    Entry { name, kind }
+    Entry { name, path: path.to_path_buf(), kind }
 }
 
 fn folder(path: &Path) -> Kind {
@@ -62,6 +89,83 @@ fn folders_in(path: &Path) -> std::io::Result<Vec<Entry>> {
     }
     folders.sort();
     Ok(folders.into_iter().map(|(name, path)| entry(&path, name.to_string_lossy().into_owned())).collect())
+}
+
+
+// ============
+// === Note ===
+// ============
+
+/// A remark printed after a repository's name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Note {
+    pub(crate) text: String,
+    pub(crate) tone: Tone,
+}
+
+/// What a note asks of the user, which sets its color.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Tone {
+    /// Context only (dim).
+    Quiet,
+    /// Coming in: the next pull brings it (cyan).
+    Incoming,
+    /// Exists only on this machine, until it is pushed or for good (yellow).
+    OnlyHere,
+    /// Needs the user (red).
+    Problem,
+}
+
+impl Tone {
+    fn color(self) -> &'static str {
+        match self {
+            Self::Quiet => "2",
+            Self::Incoming => "36",
+            Self::OnlyHere => "33",
+            Self::Problem => "31",
+        }
+    }
+}
+
+/// What `list` says about a repository, as of its last fetch: nothing when it is clean and in sync.
+pub(crate) fn notes(status: &git::RepoStatus, origin: &git::Origin) -> Vec<Note> {
+    let tree = status.working_tree;
+    let notes = [
+        (*origin == git::Origin::Missing).then(|| note("no origin", Tone::OnlyHere)),
+        status.operation.map(|operation| note(&format!("{operation} in progress"), Tone::Problem)),
+        head_note(status, origin),
+        tree.unmerged.then(|| note("conflicts", Tone::Problem)),
+        tree.tracked_changes.then(|| note("modified", Tone::OnlyHere)),
+        tree.untracked.then(|| note("untracked files", Tone::Quiet)),
+        status.has_stash.then(|| note("stash", Tone::Quiet)),
+    ];
+    notes.into_iter().flatten().collect()
+}
+
+/// The current branch against its upstream, or where HEAD is when it isn't on a branch with commits.
+fn head_note(status: &git::RepoStatus, origin: &git::Origin) -> Option<Note> {
+    match &status.head {
+        git::Head::Detached(_) => Some(note("detached", Tone::OnlyHere)),
+        git::Head::Unborn(branch) => Some(note(&format!("{branch}: no commits yet"), Tone::Quiet)),
+        git::Head::Branch(branch) => {
+            let upstream = status.current_branch().and_then(|info| info.upstream.as_ref());
+            match upstream.map(|upstream| upstream.track) {
+                None if *origin == git::Origin::Missing => None,
+                None => Some(note(&format!("{branch}: no upstream"), Tone::OnlyHere)),
+                Some(git::Track::InSync) => None,
+                Some(git::Track::Ahead(count)) => Some(note(&format!("{branch} ↑{count}"), Tone::OnlyHere)),
+                Some(git::Track::Behind(count)) => Some(note(&format!("{branch} ↓{count}"), Tone::Incoming)),
+                Some(git::Track::Diverged { ahead, behind }) => {
+                    Some(note(&format!("{branch} ↑{ahead} ↓{behind}"), Tone::Problem))
+                }
+                Some(git::Track::Gone) => Some(note(&format!("{branch}: upstream gone"), Tone::Problem)),
+            }
+        }
+    }
+}
+
+fn note(text: &str, tone: Tone) -> Note {
+    Note { text: text.to_owned(), tone }
 }
 
 
@@ -91,14 +195,18 @@ fn lines_below(entry: &Entry, prefix: &str, colored: bool) -> Vec<String> {
                     .collect()
             }
         },
-        Kind::Repository | Kind::LinkedCheckout | Kind::NoRepositories | Kind::Unreadable(_) => Vec::new(),
+        Kind::Repository(_) | Kind::LinkedCheckout | Kind::NoRepositories | Kind::Unreadable(_) => Vec::new(),
     }
 }
 
 fn label(entry: &Entry, colored: bool) -> String {
     let name = &entry.name;
     match &entry.kind {
-        Kind::Repository => name.clone(),
+        Kind::Repository(notes) if notes.is_empty() => name.clone(),
+        Kind::Repository(notes) => {
+            let painted = notes.iter().map(|note| paint(note.tone.color(), &note.text, colored)).collect::<Vec<_>>();
+            format!("{name}  {}", painted.join(" · "))
+        }
         Kind::Folder(_) => format!("{name}/"),
         Kind::LinkedCheckout => format!("{name} {}", paint("2", "(linked worktree, not synced)", colored)),
         Kind::NoRepositories => match colored {
@@ -124,10 +232,91 @@ fn paint(code: &str, text: &str, colored: bool) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::os::unix::fs::PermissionsExt as _;
 
+    use crate::domain;
+    use crate::fixtures;
+    use crate::git;
+    use super::Note;
+    use super::Tone;
     use super::entry;
+    use super::notes;
     use super::render;
+
+    fn note(text: &str, tone: Tone) -> Note {
+        Note { text: text.to_owned(), tone }
+    }
+
+    /// A repository on `main`, whose upstream is `origin/main` in the state `track` when there is one.
+    fn on_main(track: Option<git::Track>) -> anyhow::Result<git::RepoStatus> {
+        let name: domain::BranchName = "main".parse()?;
+        let upstream = track.map(|track| git::Upstream {
+            full_ref: "refs/remotes/origin/main".to_owned(),
+            remote: git::UpstreamRemote::Named(domain::RemoteName::origin()),
+            remote_ref: "refs/heads/main".to_owned(),
+            track,
+        });
+        Ok(git::RepoStatus {
+            head: git::Head::Branch(name.clone()),
+            working_tree: git::WorkingTree::default(),
+            operation: None,
+            has_stash: false,
+            branches: vec![git::BranchInfo { name, upstream }],
+        })
+    }
+
+    #[test]
+    fn notes_tell_what_is_only_here_coming_in_or_needing_the_user() -> anyhow::Result<()> {
+        let origin = git::Origin::Url(fixtures::url("git@github.com:o/r.git")?);
+        let (only_here, incoming, problem) = (Tone::OnlyHere, Tone::Incoming, Tone::Problem);
+        assert_eq!(notes(&on_main(Some(git::Track::InSync))?, &origin), []);
+        let behind_and_edited = git::RepoStatus {
+            working_tree: git::WorkingTree { tracked_changes: true, ..git::WorkingTree::default() },
+            ..on_main(Some(git::Track::Behind(22)))?
+        };
+        assert_eq!(notes(&behind_and_edited, &origin), [note("main ↓22", incoming), note("modified", only_here)]);
+        assert_eq!(notes(&on_main(Some(git::Track::Ahead(3)))?, &origin), [note("main ↑3", only_here)]);
+        let diverged = on_main(Some(git::Track::Diverged { ahead: 1, behind: 2 }))?;
+        assert_eq!(notes(&diverged, &origin), [note("main ↑1 ↓2", problem)]);
+        assert_eq!(notes(&on_main(Some(git::Track::Gone))?, &origin), [note("main: upstream gone", problem)]);
+        assert_eq!(notes(&on_main(None)?, &origin), [note("main: no upstream", only_here)]);
+        assert_eq!(notes(&on_main(None)?, &git::Origin::Missing), [note("no origin", only_here)]);
+        let detached = git::RepoStatus { head: git::Head::Detached("a".repeat(40).parse()?), ..on_main(None)? };
+        assert_eq!(notes(&detached, &origin), [note("detached", only_here)]);
+        let unborn = git::RepoStatus { head: git::Head::Unborn("main".parse()?), branches: vec![], ..on_main(None)? };
+        assert_eq!(notes(&unborn, &origin), [note("main: no commits yet", Tone::Quiet)]);
+        let merging = git::RepoStatus {
+            operation: Some(git::Operation::Merge),
+            working_tree: git::WorkingTree { unmerged: true, untracked: true, ..git::WorkingTree::default() },
+            has_stash: true,
+            ..on_main(Some(git::Track::InSync))?
+        };
+        let expected = [
+            note("merge in progress", problem),
+            note("conflicts", problem),
+            note("untracked files", Tone::Quiet),
+            note("stash", Tone::Quiet),
+        ];
+        assert_eq!(notes(&merging, &origin), expected);
+        Ok(())
+    }
+
+    #[test]
+    fn notes_follow_their_repository_in_color() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        for repository in ["a", "b"] {
+            std::fs::create_dir_all(dir.path().join(repository).join(".git"))?;
+        }
+        let tree = entry(dir.path(), "dev".to_owned());
+        assert_eq!(tree.repositories(), [dir.path().join("a"), dir.path().join("b")]);
+        let written = vec![note("main ↓2", Tone::Incoming), note("modified", Tone::OnlyHere)];
+        let tree = tree.with_notes(&mut BTreeMap::from([(dir.path().join("a"), written)]));
+        assert_eq!(render(&tree, false), "dev/\n├── a  main ↓2 · modified\n└── b\n");
+        let colored = "dev/\n├── a  \u{1b}[36mmain ↓2\u{1b}[0m · \u{1b}[33mmodified\u{1b}[0m\n└── b\n";
+        assert_eq!(render(&tree, true), colored);
+        Ok(())
+    }
 
     #[test]
     fn draws_folders_down_to_repositories_and_flags_folders_without_one() -> anyhow::Result<()> {
